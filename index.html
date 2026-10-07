@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>🏍️ Bike Rush</title>
+
+<style>
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
+
+html,body{
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#111;
+  font-family:Arial,sans-serif;
+  touch-action:none;
+}
+
+canvas{
+  display:block;
+  width:100%;
+  height:100%;
+}
+
+/* HUD */
+#hud{
+  position:fixed;
+  top:12px;
+  left:0;
+  right:0;
+  display:flex;
+  justify-content:space-around;
+  color:white;
+  font-size:18px;
+  font-weight:bold;
+  text-shadow:2px 2px 4px #000;
+  pointer-events:none;
+}
+
+/* MENU */
+.screen{
+  position:fixed;
+  inset:0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:rgba(0,0,0,.72);
+}
+
+.card{
+  width:min(90%,360px);
+  padding:30px 20px;
+  text-align:center;
+  color:white;
+  background:linear-gradient(145deg,#17202a,#263747);
+  border:2px solid rgba(255,255,255,.2);
+  border-radius:24px;
+  box-shadow:0 15px 50px #000;
+}
+
+.card h1{
+  font-size:44px;
+  color:#ffd43b;
+  margin-bottom:10px;
+  text-shadow:0 4px 8px #000;
+}
+
+.card p{
+  margin:10px 0;
+  line-height:1.5;
+}
+
+.mainBtn{
+  margin-top:18px;
+  padding:15px 30px;
+  border:0;
+  border-radius:15px;
+  background:#ffd43b;
+  color:#111;
+  font-size:20px;
+  font-weight:bold;
+  box-shadow:0 5px 0 #a56f00;
+}
+
+/* CONTROLS */
+#controls{
+  position:fixed;
+  bottom:22px;
+  left:0;
+  right:0;
+  display:flex;
+  justify-content:space-between;
+  padding:0 22px;
+}
+
+.control{
+  width:76px;
+  height:76px;
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,.7);
+  background:rgba(255,255,255,.2);
+  color:white;
+  font-size:30px;
+  font-weight:bold;
+}
+
+#boost{
+  width:100px;
+  border-radius:20px;
+  font-size:15px;
+}
+
+.hidden{
+  display:none!important;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <span>🏆 Score: <b id="score">0</b></span>
+  <span>🪙 Coins: <b id="coins">0</b></span>
+  <span>⚡ Speed: <b id="speed">0</b></span>
+</div>
+
+<!-- START SCREEN -->
+<div id="startScreen" class="screen">
+  <div class="card">
+    <h1>🏍️ BIKE RUSH</h1>
+
+    <p>
+      🚦 গাড়ি এড়িয়ে বাইক চালাও<br>
+      🪙 কয়েন সংগ্রহ করো<br>
+      ⚡ Boost ব্যবহার করো
+    </p>
+
+    <p>◀ ▶ অথবা কিবোর্ডের Arrow Key দিয়ে বাইক চালাও</p>
+
+    <button class="mainBtn" id="startBtn">
+      START RIDE
+    </button>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div id="gameOver" class="screen hidden">
+  <div class="card">
+    <h1>💥 GAME OVER</h1>
+
+    <p>
+      তোমার Score:
+      <b id="finalScore">0</b>
+    </p>
+
+    <p>
+      সংগৃহীত Coins:
+      <b id="finalCoins">0</b>
+    </p>
+
+    <button class="mainBtn" id="restartBtn">
+      🔄 RIDE AGAIN
+    </button>
+  </div>
+</div>
+
+<!-- MOBILE CONTROLS -->
+<div id="controls">
+
+  <button class="control" id="leftBtn">
+    ◀
+  </button>
+
+  <button class="control" id="boost">
+    ⚡ BOOST
+  </button>
+
+  <button class="control" id="rightBtn">
+    ▶
+  </button>
+
+</div>
+
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let W = 0;
+let H = 0;
+let dpr = 1;
+
+let running = false;
+
+let score = 0;
+let coinCount = 0;
+
+let roadOffset = 0;
+let carTimer = 0;
+let coinTimer = 0;
+let boostTimer = 0;
+
+let lastTime = 0;
+
+let keys = {
+  left:false,
+  right:false
+};
+
+let bike = {
+  x:0,
+  y:0,
+  width:40,
+  height:72,
+  velocity:0
+};
+
+let cars = [];
+let coins = [];
+
+
+/* =========================
+   CANVAS SIZE
+========================= */
+
+function resizeCanvas(){
+
+  W = window.innerWidth;
+  H = window.innerHeight;
+
+  dpr = window.devicePixelRatio || 1;
+
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+
+  ctx.setTransform(
+    dpr,0,
+    0,dpr,
+    0,0
+  );
+
+  bike.y = H - 145;
+
+  if(bike.x === 0){
+    bike.x = W / 2;
+  }
+}
+
+window.addEventListener(
+  "resize",
+  resizeCanvas
+);
+
+resizeCanvas();
+
+
+/* =========================
+   RESET GAME
+========================= */
+
+function resetGame(){
+
+  score = 0;
+  coinCount = 0;
+
+  roadOffset = 0;
+  carTimer = 0;
+  coinTimer = 0;
+  boostTimer = 0;
+
+  cars = [];
+  coins = [];
+
+  bike.x = W / 2;
+  bike.velocity = 0;
+
+  document.getElementById("score").textContent = "0";
+  document.getElementById("coins").textContent = "0";
+  document.getElementById("speed").textContent = "0";
+}
+
+
+/* =========================
+   ROAD
+========================= */
+
+function drawRoad(){
+
+  /* Grass */
+
+  ctx.fillStyle = "#68bd52";
+  ctx.fillRect(
+    0,0,W,H
+  );
+
+  const roadWidth =
+    Math.min(W * .72,500);
+
+  const roadX =
+    (W-roadWidth)/2;
+
+  /* Road */
+
+  ctx.fillStyle = "#303030";
+
+  ctx.fillRect(
+    roadX,
+    0,
+    roadWidth,
+    H
+  );
+
+  /* Road edge */
+
+  ctx.fillStyle = "#777";
+
+  ctx.fillRect(
+    roadX,
+    0,
+    7,
+    H
+  );
+
+  ctx.fillRect(
+    roadX+roadWidth-7,
+    0,
+    7,
+    H
+  );
+
+  /* Lane markings */
+
+  ctx.fillStyle = "#fff";
+
+  for(
+    let y = -100 + (roadOffset % 100);
+    y < H;
+    y += 100
+  ){
+
+    ctx.fillRect(
+      W/2-4,
+      y,
+      8,
+      55
+    );
+  }
+
+  /* Trees */
+
+  for(
+    let y = -80 + (roadOffset % 150);
+    y < H;
+    y += 150
+  ){
+
+    drawTree(
+      roadX-38,
+      y+30
+    );
+
+    drawTree(
+      roadX+roadWidth+38,
+      y+95
+    );
+  }
+}
+
+
+/* =========================
+   TREE
+========================= */
+
+function drawTree(x,y){
+
+  ctx.fillStyle="#704214";
+
+  ctx.fillRect(
+    x-4,
+    y,
+    8,
+    25
+  );
+
+  ctx.fillStyle="#247a38";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    x,
+    y-5,
+    18,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+}
+
+
+/* =========================
+   BIKE
+========================= */
+
+function drawBike(){
+
+  ctx.save();
+
+  ctx.translate(
+    bike.x,
+    bike.y
+  );
+
+  /* wheels */
+
+  ctx.fillStyle="#111";
+
+  ctx.beginPath();
+
+  ctx.ellipse(
+    0,
+    25,
+    10,
+    23,
+    0,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+  ctx.beginPath();
+
+  ctx.ellipse(
+    0,
+    -25,
+    10,
+    23,
+    0,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  /* body */
+
+  ctx.fillStyle="#e63946";
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    -12,
+    -28,
+    24,
+    56,
+    9
+  );
+
+  ctx.fill();
+
+
+  /* seat */
+
+  ctx.fillStyle="#151515";
+
+  ctx.fillRect(
+    -9,
+    -5,
+    18,
+    23
+  );
+
+
+  /* head light */
+
+  ctx.fillStyle="#ffd43b";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    0,
+    -30,
+    6,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+
+  ctx.restore();
+}
+
+
+/* =========================
+   CAR
+========================= */
+
+function drawCar(car){
+
+  ctx.save();
+
+  ctx.translate(
+    car.x,
+    car.y
+  );
+
+  /* body */
+
+  ctx.fillStyle = car.color;
+
+  ctx.beginPath();
+
+  ctx.roundRect(
+    -20,
+    -35,
+    40,
+    70,
+    9
+  );
+
+  ctx.fill();
+
+
+  /* windows */
+
+  ctx.fillStyle="#bde0fe";
+
+  ctx.fillRect(
+    -14,
+    -23,
+    28,
+    16
+  );
+
+  ctx.fillRect(
+    -14,
+    7,
+    28,
+    13
+  );
+
+
+  /* wheels */
+
+  ctx.fillStyle="#111";
+
+  ctx.fillRect(
+    -23,
+    -22,
+    6,
+    16
+  );
+
+  ctx.fillRect(
+    17,
+    -22,
+    6,
+    16
+  );
+
+  ctx.fillRect(
+    -23,
+    8,
+    6,
+    16
+  );
+
+  ctx.fillRect(
+    17,
+    8,
+    6,
+    16
+  );
+
+  ctx.restore();
+}
+
+
+/* =========================
+   COIN
+========================= */
+
+function drawCoin(c){
+
+  ctx.save();
+
+  ctx.translate(
+    c.x,
+    c.y
+  );
+
+  ctx.fillStyle="#ffd43b";
+
+  ctx.beginPath();
+
+  ctx.arc(
+    0,
+    0,
+    11,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+  ctx.strokeStyle="#b77900";
+
+  ctx.lineWidth=2;
+
+  ctx.stroke();
+
+  ctx.fillStyle="#a56f00";
+
+  ctx.font="bold 12px Arial";
+
+  ctx.textAlign="center";
+
+  ctx.fillText(
+    "$",
+    0,
+    4
+  );
+
+  ctx.restore();
+}
+
+
+/* =========================
+   SPAWN CAR
+========================= */
+
+function spawnCar(){
+
+  const roadWidth =
+    Math.min(W*.72,500);
+
+  const roadX =
+    (W-roadWidth)/2;
+
+  const lanes = [
+
+    roadX + roadWidth*.28,
+
+    roadX + roadWidth*.50,
+
+    roadX + roadWidth*.72
+
+  ];
+
+  const lane =
+    lanes[
+      Math.floor(
+        Math.random()*lanes.length
+      )
+    ];
+
+  const colors = [
+    "#3498db",
+    "#f1c40f",
+    "#9b59b6",
+    "#e67e22",
+    "#2ecc71"
+  ];
+
+  cars.push({
+
+    x:lane,
+
+    y:-70,
+
+    color:
+      colors[
+        Math.floor(
+          Math.random()*colors.length
+        )
+      ]
+
+  });
+}
+
+
+/* =========================
+   SPAWN COIN
+========================= */
+
+function spawnCoin(){
+
+  const roadWidth =
+    Math.min(W*.72,500);
+
+  const roadX =
+    (W-roadWidth)/2;
+
+  coins.push({
+
+    x:
+      roadX+35+
+      Math.random()*
+      (roadWidth-70),
+
+    y:-20
+
+  });
+}
+
+
+/* =========================
+   COLLISION
+========================= */
+
+function collision(a,b){
+
+  return (
+
+    Math.abs(a.x-b.x) < 30 &&
+
+    Math.abs(a.y-b.y) < 50
+
+  );
+}
+
+
+/* =========================
+   GAME LOOP
+========================= */
+
+function gameLoop(time){
+
+  if(!running) return;
+
+  let delta =
+    Math.min(
+      (time-lastTime)/16.67,
+      2
+    );
+
+  lastTime = time;
+
+
+  /* speed */
+
+  let speed =
+    5 +
+    score/800;
+
+  if(boostTimer > 0){
+
+    speed += 5;
+
+    boostTimer -= delta;
+  }
+
+
+  /* movement */
+
+  if(keys.left){
+
+    bike.velocity -=
+      0.8*delta;
+  }
+
+  if(keys.right){
+
+    bike.velocity +=
+      0.8*delta;
+  }
+
+  bike.velocity *=
+    Math.pow(.82,delta);
+
+  bike.x +=
+    bike.velocity *
+    8 *
+    delta;
+
+
+  /* road limits */
+
+  const roadWidth =
+    Math.min(W*.72,500);
+
+  const roadX =
+    (W-roadWidth)/2;
+
+  bike.x =
+    Math.max(
+      roadX+28,
+      Math.min(
+        roadX+roadWidth-28,
+        bike.x
+      )
+    );
+
+
+  /* road */
+
+  roadOffset +=
+    speed*delta;
+
+
+  /* car spawning */
+
+  carTimer -= delta;
+
+  if(carTimer <= 0){
+
+    spawnCar();
+
+    carTimer =
+      Math.max(
+        18,
+        42-score/300
+      );
+  }
+
+
+  /* coin spawning */
+
+  coinTimer -= delta;
+
+  if(coinTimer <= 0){
+
+    spawnCoin();
+
+    coinTimer=45;
+  }
+
+
+  /* move cars */
+
+  cars.forEach(
+    car=>{
+      car.y +=
+        speed*delta*1.25;
+    }
+  );
+
+
+  /* move coins */
+
+  coins.forEach(
+    coin=>{
+      coin.y +=
+        speed*delta*1.2;
+    }
+  );
+
+
+  /* car collision */
+
+  for(const car of cars){
+
+    if(
+      collision(
+        bike,
+        car
+      )
+    ){
+
+      gameOver();
+
+      return;
+    }
+  }
+
+
+  /* coin collision */
+
+  coins =
+    coins.filter(
+      coin=>{
+
+        if(
+          Math.abs(
+            coin.x-bike.x
+          ) < 25 &&
+
+          Math.abs(
+            coin.y-bike.y
+          ) < 50
+        ){
+
+          coinCount++;
+
+          return false;
+        }
+
+        return true;
+      }
+    );
+
+
+  /* remove old objects */
+
+  cars =
+    cars.filter(
+      car=>car.y<H+100
+    );
+
+  coins =
+    coins.filter(
+      coin=>coin.y<H+50
+    );
+
+
+  /* score */
+
+  score +=
+    speed*
+    delta*
+    .15;
+
+
+  /* drawing */
+
+  drawRoad();
+
+  cars.forEach(
+    drawCar
+  );
+
+  coins.forEach(
+    drawCoin
+  );
+
+  drawBike();
+
+
+  /* HUD */
+
+  document.getElementById(
+    "score"
+  ).textContent =
+    Math.floor(score);
+
+  document.getElementById(
+    "coins"
+  ).textContent =
+    coinCount;
+
+  document.getElementById(
+    "speed"
+  ).textContent =
+    Math.floor(speed*12);
+
+
+  requestAnimationFrame(
+    gameLoop
+  );
+}
+
+
+/* =========================
+   START
+========================= */
+
+function startGame(){
+
+  resetGame();
+
+  running=true;
+
+  document
+    .getElementById(
+      "startScreen"
+    )
+    .classList.add(
+      "hidden"
+    );
+
+  document
+    .getElementById(
+      "gameOver"
+    )
+    .classList.add(
+      "hidden"
+    );
+
+  lastTime =
+    performance.now();
+
+  requestAnimationFrame(
+    gameLoop
+  );
+}
+
+
+/* =========================
+   GAME OVER
+========================= */
+
+function gameOver(){
+
+  running=false;
+
+  document.getElementById(
+    "finalScore"
+  ).textContent =
+    Math.floor(score);
+
+  document.getElementById(
+    "finalCoins"
+  ).textContent =
+    coinCount;
+
+  document
+    .getElementById(
+      "gameOver"
+    )
+    .classList.remove(
+      "hidden"
+    );
+}
+
+
+/* =========================
+   BUTTONS
+========================= */
+
+document
+  .getElementById(
+    "startBtn"
+  )
+  .onclick =
+  startGame;
+
+document
+  .getElementById(
+    "restartBtn"
+  )
+  .onclick =
+  startGame;
+
+
+/* =========================
+   TOUCH CONTROL
+========================= */
+
+function holdButton(
+  element,
+  property
+){
+
+  element.addEventListener(
+    "pointerdown",
+    e=>{
+      e.preventDefault();
+      keys[property]=true;
+    }
+  );
+
+  element.addEventListener(
+    "pointerup",
+    ()=>{
+      keys[property]=false;
+    }
+  );
+
+  element.addEventListener(
+    "pointercancel",
+    ()=>{
+      keys[property]=false;
+    }
+  );
+
+  element.addEventListener(
+    "pointerleave",
+    ()=>{
+      keys[property]=false;
+    }
+  );
+}
+
+holdButton(
+  document.getElementById(
+    "leftBtn"
+  ),
+  "left"
+);
+
+holdButton(
+  document.getElementById(
+    "rightBtn"
+  ),
+  "right"
+);
+
+
+/* BOOST */
+
+document
+  .getElementById(
+    "boost"
+  )
+  .addEventListener(
+    "pointerdown",
+    e=>{
+      e.preventDefault();
+
+      if(running){
+
+        boostTimer=120;
+      }
+    }
+  );
+
+
+/* =========================
+   KEYBOARD
+========================= */
+
+window.addEventListener(
+  "keydown",
+  e=>{
+
+    if(
+      e.key==="ArrowLeft"
+    ){
+
+      keys.left=true;
+    }
+
+    if(
+      e.key==="ArrowRight"
+    ){
+
+      keys.right=true;
+    }
+
+    if(
+      e.code==="Space"
+    ){
+
+      boostTimer=120;
+    }
+
+    if(
+      e.key==="Enter" &&
+      !running
+    ){
+
+      startGame();
+    }
+
+  }
+);
+
+
+window.addEventListener(
+  "keyup",
+  e=>{
+
+    if(
+      e.key==="ArrowLeft"
+    ){
+
+      keys.left=false;
+    }
+
+    if(
+      e.key==="ArrowRight"
+    ){
+
+      keys.right=false;
+    }
+
+  }
+);
+
+</script>
+
+</body>
+  </html>
